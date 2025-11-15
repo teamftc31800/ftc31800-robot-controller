@@ -9,6 +9,7 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import com.qualcomm.robotcore.util.ElapsedTime;
 //import com.qualcomm.robotcore.hardware.ConfigurationType;
 //import com.qualcomm.robotcore.hardware.HardwareDevice;
 
@@ -61,6 +62,8 @@ public class TeamBotTeleop extends OpMode {
         LAUNCH,
         LAUNCHING,
     }
+
+    LaunchState launchState = LaunchState.IDLE;
 
     @Override
     public void init() {
@@ -213,6 +216,9 @@ public class TeamBotTeleop extends OpMode {
         telemetry.addData("intakePower", "%.2f", intakePower);
         telemetry.addData("intakePresent", hasIntake);
 
+        telemetry.addLine("== FEEDER ==");
+        telemetry.addData("feederPresent", hasFeeder);
+
         telemetry.addLine("== FLYWHEEL ==");
         telemetry.addData("targetRPM", "%.0f", targetFlywheelRPM);
         telemetry.addData("flywheelPresent", hasFlywheel);
@@ -295,13 +301,6 @@ public class TeamBotTeleop extends OpMode {
         return ticksPerMin / ticksPerRev;
     }
 
-    void launch(boolean shotRequested) {
-        if (shotRequested) {
-                
-        } else if (flywheelRequestedOff) {
-            flywheel.setPower(0);
-        }
-    }
 
     void launch(boolean shotRequested, boolean stopRequested) {
         
@@ -309,6 +308,10 @@ public class TeamBotTeleop extends OpMode {
             case IDLE:
                 if (shotRequested) {
                     launchState = LaunchState.SPIN_UP;
+                }
+                if (stopRequested) {
+                    flywheel.setPower(STOP_SPEED);
+                    launchState = LaunchState.IDLE;
                 }
                 break;
             case SPIN_UP:

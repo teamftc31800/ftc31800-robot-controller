@@ -5,6 +5,7 @@ package org.firstinspires.ftc.teamcode;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
@@ -44,7 +45,7 @@ public class TeamBotAuto extends OpMode {
     private boolean hasIntake     = false;
     private boolean hasFlywheel   = false;
 
-    static final double AUTOPOWER   = 0.25;
+    static final double AUTOPOWER   = 0.1;
 
     double flPower = AUTOPOWER;
     double blPower = AUTOPOWER;
@@ -123,7 +124,7 @@ public class TeamBotAuto extends OpMode {
 
         }
 
-        autoState = AutonomousState.PREPARE_TO_LAUNCH;
+        autoState = AutonomousState.LAUNCHING;
 
         telemetry.addLine("Init complete. Check missing hardware below.");
         reportHardwareStatus();
@@ -167,7 +168,7 @@ public class TeamBotAuto extends OpMode {
 
              
 
-                autoState = AutonomousState.DRIVNG;
+                autoState = AutonomousState.DRIVING;
                 break;
             }
 
@@ -181,10 +182,10 @@ public class TeamBotAuto extends OpMode {
                     flywheel.setPower(0);
                 }
 
-                double flPower = AUTOPOWER;
-                double blPower = AUTOPOWER;
-                double frPower = AUTOPOWER;
-                double brPower = AUTOPOWER;
+                flPower = AUTOPOWER;
+                blPower = AUTOPOWER;
+                frPower = AUTOPOWER;
+                brPower = AUTOPOWER;
 
                 // Send power only if that motor exists
                 if (hasFrontLeft)  frontLeft.setPower(flPower);
@@ -212,6 +213,10 @@ public class TeamBotAuto extends OpMode {
                 if (DriveTimer.seconds() < DRIVETIME) {
                     // Keep driving
                     autoState = AutonomousState.DRIVE_TO_POSITION;
+                    if (hasFrontLeft)  frontLeft.setPower(flPower);
+                    if (hasBackLeft)   backLeft.setPower(blPower);
+                    if (hasFrontRight) frontRight.setPower(frPower);
+                    if (hasBackRight)  backRight.setPower(brPower);
                     break;
                 }
                
