@@ -15,6 +15,10 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 
 import com.qualcomm.robotcore.util.Range;
 
+import org.firstinspires.ftc.teamcode.mechanisms.AprilTagWebcam;
+import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
+
+
 @TeleOp(name="TeamBotTeleop", group="Drive")
 public class TeamBotTeleop extends OpMode {
 
@@ -64,6 +68,9 @@ public class TeamBotTeleop extends OpMode {
     }
 
     LaunchState launchState = LaunchState.IDLE;
+
+
+    AprilTagWebcam aprilTagWebcam = new AprilTagWebcam();
 
     @Override
     public void init() {
@@ -119,12 +126,21 @@ public class TeamBotTeleop extends OpMode {
             flywheel.setDirection(DcMotor.Direction.REVERSE);
         }
 
+        //AprilTag
+        aprilTagWebcam.init(hardwareMap,telemetry);
+
         telemetry.addLine("Init complete. Check missing hardware below.");
         reportHardwareStatus();
     }
 
     @Override
     public void loop() {
+
+        aprilTagWebcam.update();
+        AprilTagDetection id20 = aprilTagWebcam.getTagBySpecificId(20);
+        aprilTagWebcam.displayDetectionTelemetry(id20);
+        AprilTagDetection id24 = aprilTagWebcam.getTagBySpecificId(24);
+        aprilTagWebcam.displayDetectionTelemetry(id24);
         //----------------------------------
         // 1. DRIVE: mecanum with gamepad1
         //----------------------------------
