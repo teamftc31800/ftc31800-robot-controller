@@ -1,21 +1,19 @@
-
-
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
-
+import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
-import com.qualcomm.robotcore.util.ElapsedTime;
 //import com.qualcomm.robotcore.hardware.ConfigurationType;
 //import com.qualcomm.robotcore.hardware.HardwareDevice;
 
 import com.qualcomm.robotcore.util.Range;
 
 import org.firstinspires.ftc.teamcode.mechanisms.AprilTagWebcam;
+import org.firstinspires.ftc.teamcode.mechanisms.FeederLauncher;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 
 
@@ -31,15 +29,23 @@ public class TeamBotTeleop extends OpMode {
     // Intake (312 rpm goBILDA)
     private DcMotor intake = null;
 
-    // Intake (312 rpm goBILDA)
-    private DcMotor feeder = null;
-
-
     // Flywheel (high-speed shooter)
     private DcMotorEx flywheel = null;
 
-    // Flywheel target RPM (we’ll let you tune live)
-    private double targetFlywheelRPM = 1500; // start around mid-speed; tune with dpad
+    // Feeder motor (312 rpm goBILDA)
+    private DcMotorEx feederMotor;
+
+    // TWO feeder servos (dual feeder)
+    private CRServo feederServoLeft  = null;
+    private CRServo feederServoRight = null;
+
+    private boolean hasFlywheel = false;
+    private boolean hasFeederMotor = false;
+    private boolean hasFeederServoLeft = false;
+    private boolean hasFeederServoRight = false;
+
+    private boolean flywheelActive = false;
+    private boolean lastButtonState = false;
 
     // Convenience: did each motor initialize?
     private boolean hasFrontLeft  = false;
@@ -47,30 +53,33 @@ public class TeamBotTeleop extends OpMode {
     private boolean hasBackLeft   = false;
     private boolean hasBackRight  = false;
     private boolean hasIntake     = false;
-    private boolean hasFlywheel   = false;
-    private boolean hasFeeder     = false;
+    private double largest_overshoot = 0;
+    private static final double F                = 400.0;  // suggested feed speed
+    private static final double FEEDER_HOLD_RPM  = 0.0;    // stop when not ready
 
-    final double ticksPerRev = 28.0; // *** TODO: PUT YOUR FLYWHEEL ENCODER TICKS/REV HERE ***
+    // Ticks per revolution (output shaft)
+    // Adjust if your exact models differ.
+    private static final double FLYWHEEL_TPR = 28.0;     // e.g., high-RPM 6000 motor often ~28 tpr at output (check your unit)
+    private static final double FEEDER_TPR   = 537.7;    // goBILDA 312 rpm (19.2:1) ≈ 537.7 tpr
 
-    final double FLYWHEEL_MIN_VELOCITY_PERCENT = 0.9; // 90% of target speed
+    private static final double FEEDER_RPM = 400;
 
-    ElapsedTime feederTimer = new ElapsedTime();
+    // Targets
+    private static double FLYWHEEL_TARGET_RPM = 2750.0;  // your original target
+    private static final double FLYWHEEL_TOLERANCE   = 200.0;  // +/- RPM window
 
-    final double FEED_TIME_SECONDS = 0.20; //The feeder servos run this long when a shot is requested.
-    final double STOP_SPEED = 0.0; //We send this power to the servos when we want them to stop.
-    final double FULL_SPEED = 1.0;
+    // Debounce: require N consecutive "in-tolerance" reads before feeding
+    private int inToleranceCount = 0;
 
-    private enum LaunchState {
-        IDLE,
-        SPIN_UP,
-        LAUNCH,
-        LAUNCHING,
-    }
+    private int dpad_pressed = 0;
 
-    LaunchState launchState = LaunchState.IDLE;
-
+    private static final int IN_TOLERANCE_REQUIRED = 1;
 
     AprilTagWebcam aprilTagWebcam = new AprilTagWebcam();
+    FeederLauncher leftFeederLauncher = new FeederLauncher();
+
+    FeederLauncher rightFeederLauncher = new FeederLauncher();
+
 
     @Override
     public void init() {
@@ -83,16 +92,15 @@ public class TeamBotTeleop extends OpMode {
         backLeft   = getMotor("left_back_drive");
         backRight  = getMotor("right_back_drive");
         intake     = getMotor("intake");
-        feeder     = getMotor("feeder");
-        flywheel   = getMotorEx("launcher"); // needs DcMotorEx for velocity
+
+        //flywheel   = getMotorEx("launcher"); // needs DcMotorEx for velocity
 
         hasFrontLeft  = (frontLeft  != null);
         hasFrontRight = (frontRight != null);
         hasBackLeft   = (backLeft   != null);
         hasBackRight  = (backRight  != null);
         hasIntake     = (intake     != null);
-        hasFlywheel   = (flywheel   != null);
-        hasFeeder     = (feeder     != null);
+        //hasFlywheel   = (flywheel   != null);
 
         // Reverse directions so forward stick actually drives forward.
         // Common mecanum setup: left side reversed, right side normal.
@@ -111,40 +119,77 @@ public class TeamBotTeleop extends OpMode {
             intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         }
 
-        if (hasFeeder) {
-            feeder.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+//        if (hasFlywheel) {
+//            // Shooter usually FLOATS on zero, so wheel can spin down naturally.
+//            flywheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+//
+//            // We’ll switch to RUN_USING_ENCODER so .setVelocity() works in loop()
+//            flywheel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+//            flywheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+//            flywheel.setDirection(DcMotor.Direction.REVERSE);
+//        }
+
+        // Feeder motor
+        try {
+            feederMotor = hardwareMap.get(DcMotorEx.class, "feeder");
+            feederMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+            feederMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+            feederMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+            feederMotor.setDirection(DcMotorSimple.Direction.FORWARD);
+            hasFeederMotor = true;
+        } catch (Exception e) {
+            telemetry.addLine("⚠️ Feeder motor not found (name: 'feeder').");
         }
 
-        if (hasFlywheel) {
-            // Shooter usually FLOATS on zero, so wheel can spin down naturally.
-            flywheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        // LEFT feeder servo
+//        try {
+//            feederServoLeft = hardwareMap.get(CRServo.class, "feederServoLeft");
+//            feederServoLeft.setPower(0.0);
+//            hasFeederServoLeft = true;
+//        } catch (Exception e) {
+//            telemetry.addLine("⚠️ Left feeder servo not found (name: 'feederServoLeft').");
+//        }
 
-            // Optional: run without encoder for now, we’ll manually set velocity later.
-            // We’ll switch to RUN_USING_ENCODER so .setVelocity() works in loop()
-            flywheel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-            flywheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            flywheel.setDirection(DcMotor.Direction.REVERSE);
-        }
+        // RIGHT feeder servo
+//        try {
+//            feederServoRight = hardwareMap.get(CRServo.class, "feederServoRight");
+//            feederServoRight.setPower(0.0);
+//            hasFeederServoRight = true;
+//        } catch (Exception e) {
+//            telemetry.addLine("⚠️ Right feeder servo not found (name: 'feederServoRight').");
+//        }
+
+        //leftfeederlauncher
+        leftFeederLauncher.init(hardwareMap,telemetry,"launcher","feederServoLeft");
+
+        rightFeederLauncher.init(hardwareMap,telemetry,"null","feederServoRight");
 
         //AprilTag
         aprilTagWebcam.init(hardwareMap,telemetry);
 
-        telemetry.addLine("Init complete. Check missing hardware below.");
-        reportHardwareStatus();
+//
+//        telemetry.addLine("Init complete. Check missing hardware below.");
+//        reportHardwareStatus();
+        aprilTagWebcam.reportHardwareStatus();
+        leftFeederLauncher.reportHardwareStatus();
+        rightFeederLauncher.reportHardwareStatus();
+
+
     }
 
     @Override
     public void loop() {
+
 
         aprilTagWebcam.update();
         AprilTagDetection id20 = aprilTagWebcam.getTagBySpecificId(20);
         aprilTagWebcam.displayDetectionTelemetry(id20);
         AprilTagDetection id24 = aprilTagWebcam.getTagBySpecificId(24);
         aprilTagWebcam.displayDetectionTelemetry(id24);
+
         //----------------------------------
         // 1. DRIVE: mecanum with gamepad1
         //----------------------------------
-        // left_stick_y is typically forward/back, but it's inverted (up is -1).
         double y = -gamepad1.left_stick_y;  // forward = +1
         double x =  gamepad1.left_stick_x;  // strafe right = +1
         double rx = gamepad1.right_stick_x; // rotate right = +1
@@ -156,12 +201,7 @@ public class TeamBotTeleop extends OpMode {
         double brPower = y + x - rx;
 
         // Normalize so no value exceeds 1.0
-        double max = Math.max(1.0,
-                Math.max(Math.abs(flPower),
-                        Math.max(Math.abs(blPower),
-                                Math.max(Math.abs(frPower),
-                                        Math.abs(brPower)))));
-
+        double max = Math.max(Math.abs(y) + Math.abs(x) + Math.abs(rx), 1);
         flPower /= max;
         blPower /= max;
         frPower /= max;
@@ -174,87 +214,147 @@ public class TeamBotTeleop extends OpMode {
         if (hasBackRight)  backRight.setPower(brPower);
 
         //----------------------------------
-        // 2. INTAKE CONTROL (gamepad1 A/B/X)
+        // 2. INTAKE CONTROL (gamepad2 A/B/X)
         //----------------------------------
-        //  A = intake forward
-        //  B = intake reverse
-        //  X = stop intake
         double intakePower = 0.0;
         if (gamepad2.a) {
             intakePower = 1.0;    // full forward
         } else if (gamepad2.b) {
             intakePower = -1.0;   // reverse / spit out
         } else if (gamepad2.x) {
-            intakePower = 0.0;
+            intakePower = 0.0;    // stop
         }
         if (hasIntake) {
             intake.setPower(intakePower);
         }
 
         //----------------------------------
-        // 3. FLYWHEEL CONTROL (gamepad1)
+        // 3. DUAL FEEDER SERVO CONTROL (D-PAD)
         //----------------------------------
-        //  Right bumper  = enable flywheel at target RPM
-        //  Left bumper   = stop flywheel
-        //  Dpad up/down  = tune target RPM in steps
-        //
-        // We'll convert RPM -> ticksPerSecond and call setVelocity().
-        //
-        // NOTE: You *must* update "TICKS_PER_REV" below to match your flywheel motor encoder.
-        // goBILDA 1172rpm motors often ~28 ticks per rev. 312rpm gobilda motor ~537.6 tpr.
-        // Your ~6000rpm motor may be a coreless or planetary w/ custom encoder or no encoder.
-        // If it has no encoder, setVelocity won't really work; you'd fall back to simple setPower().
+        // Left servo: D-pad LEFT (forward)
+        // Right servo: D-pad RIGHT (forward)
+//        double leftServoPower  = 0.0;
+//        double rightServoPower = 0.0;
 
-        // Live adjust RPM setpoint:
-        if (gamepad2.dpad_up) {
-            targetFlywheelRPM += 50; // +100 RPM
-        } else if (gamepad2.dpad_down) {
-            targetFlywheelRPM -= 50; // -100 RPM
+        if (gamepad2.dpad_left) {
+//            leftServoPower = -1.0;    // forward
+            leftFeederLauncher.update(0,0,true, true);
         }
-        targetFlywheelRPM = Range.clip(targetFlywheelRPM, 500, 6000); // keep sane
-
-        // Spin logic L1: Left bumper, R1: Right bumper
-        boolean flywheelRequestedOn = gamepad2.right_bumper;
-        boolean flywheelRequestedOff = gamepad2.left_bumper;
-
-        if (hasFlywheel && hasFeeder) {
-            launch(flywheelRequestedOn, flywheelRequestedOff);
+        leftFeederLauncher.Launch();
+        if (gamepad2.dpad_right) {
+//            rightServoPower = -1.0;   // forward
+            rightFeederLauncher.update(0,0,true,true);
         }
+        rightFeederLauncher.Launch();
+
+//        if (hasFeederServoLeft) {
+//            feederServoLeft.setPower(leftServoPower);
+//        }
+//        if (hasFeederServoRight) {
+//            feederServoRight.setPower(rightServoPower);
+//        }
+
+//        telemetry.addData("Feeder Servo L Power", hasFeederServoLeft ? leftServoPower : 0.0);
+//        telemetry.addData("Feeder Servo R Power", hasFeederServoRight ? rightServoPower : 0.0);
 
         //----------------------------------
-        // 4. TELEMETRY / DRIVER FEEDBACK
+        // 4. FLYWHEEL + FEEDER MOTOR SEQUENCE
         //----------------------------------
-        telemetry.addLine("== DRIVE ==");
-        telemetry.addData("fl/br/bl/fr", "%.2f %.2f %.2f %.2f",
-                flPower, brPower, blPower, frPower);
-
-        telemetry.addLine("== INTAKE ==");
-        telemetry.addData("intakePower", "%.2f", intakePower);
-        telemetry.addData("intakePresent", hasIntake);
-
-        telemetry.addLine("== FEEDER ==");
-        telemetry.addData("feederPresent", hasFeeder);
-
-        telemetry.addLine("== FLYWHEEL ==");
-        telemetry.addData("targetRPM", "%.0f", targetFlywheelRPM);
-        telemetry.addData("flywheelPresent", hasFlywheel);
-
-        if (hasFlywheel) {
-            telemetry.addData("right_bumper", "spin @ target RPM");
-            telemetry.addData("left_bumper",  "stop");
-            telemetry.addData("dpad up/down", "RPM +/- 100");
-
-            // If encoder exists, show current velocity estimate
-            double currentVel = flywheel.getVelocity(); // ticks/sec
-            telemetry.addData("flywheelVel(ticks/s)", "%.1f", currentVel);
-            
-            
-            double currentRPM = ticksPerSecToRPM(currentVel, ticksPerRev);
-            telemetry.addData("flywheelVel(RPM est)", "%.0f", currentRPM);
-        }
+//        boolean toggleButton = gamepad2.triangle;    // use triangle to toggle sequence
+//        boolean currentButtonState = toggleButton;
+//
+//        // Rising edge detect
+//        if (currentButtonState && !lastButtonState) {
+//            flywheelActive = !flywheelActive; // toggle state
+//        }
+//
+//        // Save for next loop
+//        lastButtonState = currentButtonState;
+//
+//        if (hasFlywheel) {
+//            if (flywheelActive) {
+////                if (gamepad2.dpad_up && (dpad_pressed == 0)) {
+////                    FLYWHEEL_TARGET_RPM += 50;
+////                    dpad_pressed += 1;
+////                } else if (gamepad2.dpad_down && (dpad_pressed == 0)) {
+////                    FLYWHEEL_TARGET_RPM -= 50;
+////                    dpad_pressed += 1;
+////                } else {
+////                    dpad_pressed = 0;
+////                }
+//                // Spin up flywheel to target velocity
+//                double targetTPS = rpmToTicksPerSec(FLYWHEEL_TARGET_RPM, FLYWHEEL_TPR);
+//                flywheel.setVelocity(targetTPS);
+//
+//                // Read actual RPM
+//                double currentTPS = flywheel.getVelocity(); // ticks/sec
+//                double currentRPM = ticksPerSecToRPM(currentTPS, FLYWHEEL_TPR);
+//                boolean atSpeed = Math.abs(currentRPM - FLYWHEEL_TARGET_RPM) <= FLYWHEEL_TOLERANCE;
+//
+//                double overshoot = currentRPM-FLYWHEEL_TARGET_RPM;
+//                if (overshoot>largest_overshoot) {
+//                    largest_overshoot = overshoot;
+//                }
+//                if (atSpeed) {
+//                    inToleranceCount = Math.min(inToleranceCount + 1, IN_TOLERANCE_REQUIRED);
+//                } else {
+//                    inToleranceCount = 0;
+//                }
+//
+//                // Run feeder motor only when flywheel is stably at speed
+//                if (hasFeederMotor) {
+//                    if (inToleranceCount >= IN_TOLERANCE_REQUIRED) {
+//                        feederMotor.setVelocity(rpmToTicksPerSec(FEEDER_RPM, FEEDER_TPR));
+//                    }
+//                }
+//
+//                telemetry.addData("Flywheel", "Target %.0f RPM | Now %.0f RPM %s",
+//                        FLYWHEEL_TARGET_RPM, currentRPM, atSpeed ? "(near target)" : "");
+////                telemetry.addData("FeederMotor", (hasFeederMotor
+////                        ? (inToleranceCount >= IN_TOLERANCE_REQUIRED ? "FEEDING" : "WAITING")
+////                        : "N/A"));
+//                telemetry.addData("Largest Overshoot", largest_overshoot);
+//            } else {
+//                // Toggle off: stop both
+//                flywheel.setPower(0.0);
+//                inToleranceCount = 0;
+//
+//                if (hasFeederMotor) {
+//                    feederMotor.setPower(0.0);
+//                }
+////                telemetry.addData("Flywheel State", "Stopped");
+////                telemetry.addData("FeederMotor", hasFeederMotor ? "Stopped" : "N/A");
+//            }
+//        }
+//
+//        //----------------------------------
+//        // 5. TELEMETRY / DRIVER FEEDBACK
+//        //----------------------------------
+//        telemetry.addLine("== DRIVE ==");
+////        telemetry.addData("y/x/rx", "%.2f %.2f %.2f", y, x, rx);
+////        telemetry.addData("fl/br/bl/fr", "%.2f %.2f %.2f %.2f",
+////                flPower, brPower, blPower, frPower);
+//
+//        telemetry.addLine("== INTAKE ==");
+////        telemetry.addData("intakePower", "%.2f", intakePower);
+////        telemetry.addData("intakePresent", hasIntake);
+//
+////        telemetry.addData("Flywheel Active", flywheelActive);
+//
+//        if (hasFlywheel) {
+////            telemetry.addData("triangle", "toggle flywheel+feeder sequence");
+//            double currentVel = flywheel.getVelocity(); // ticks/sec
+////            telemetry.addData("flywheelVel(ticks/s)", "%.1f", currentVel);
+//
+//            double ticksPerRev = 28.0;
+//            double currentRPM = ticksPerSecToRPM(currentVel, ticksPerRev);
+//            telemetry.addData("flywheelVel(RPM est)", "%.0f", currentRPM);
+//        }
 
         // Hardware health summary so drivers instantly see missing motors
         reportHardwareStatus();
+        leftFeederLauncher.reportHardwareStatus();
+        rightFeederLauncher.reportHardwareStatus();
 
         telemetry.update();
     }
@@ -266,7 +366,6 @@ public class TeamBotTeleop extends OpMode {
         try {
             return hardwareMap.get(DcMotor.class, name);
         } catch (Exception e) {
-            // Could be not found in config or wrong type
             return null;
         }
     }
@@ -295,73 +394,22 @@ public class TeamBotTeleop extends OpMode {
 
         telemetry.addData("intake",     hasIntake     ? "OK" : "MISSING");
 
-        telemetry.addData("flywheel",   hasFlywheel   ? "OK" : "MISSING");
-        telemetry.addData("feeder",     hasFeeder     ? "OK" : "MISSING");
-    }
+//        telemetry.addData("flywheel",   hasFlywheel   ? "OK" : "MISSING");
+        telemetry.addData("feederMotor",hasFeederMotor ? "OK" : "MISSING");
+//        telemetry.addData("feederServoLeft",  hasFeederServoLeft  ? "OK" : "MISSING");
+//        telemetry.addData("feederServoRight", hasFeederServoRight ? "OK" : "MISSING");
+   }
 
     // -------------------------------------------------
     // Math helpers for flywheel RPM <-> ticks/sec
     // -------------------------------------------------
     private double rpmToTicksPerSec(double rpm, double ticksPerRev) {
-        // rpm * (ticks/rev) / 60 sec/min
-        // Step by step to avoid mistakes:
-        // 1. rpm * ticksPerRev = ticks per minute
         double ticksPerMinute = rpm * ticksPerRev;
-        // 2. ticks per minute / 60 = ticks per second
         return ticksPerMinute / 60.0;
     }
 
     private double ticksPerSecToRPM(double ticksPerSec, double ticksPerRev) {
-        // ticks/sec * 60 sec/min / ticksPerRev
         double ticksPerMin = ticksPerSec * 60.0;
         return ticksPerMin / ticksPerRev;
-    }
-
-
-    void launch(boolean shotRequested, boolean stopRequested) {
-        
-        switch (launchState) {
-            case IDLE:
-                if (shotRequested) {
-                    launchState = LaunchState.SPIN_UP;
-                }
-                if (stopRequested) {
-                    flywheel.setPower(STOP_SPEED);
-                    launchState = LaunchState.IDLE;
-                }
-                break;
-            case SPIN_UP:
-                            // Convert RPM to ticks/sec and set velocity
-                double targetTicksPerSec = rpmToTicksPerSec(targetFlywheelRPM, ticksPerRev);
-                double minTicksPerSec = FLYWHEEL_MIN_VELOCITY_PERCENT * targetTicksPerSec;
-
-                // Ask motor to run at that velocity.
-                // The SDK will do PIDF internally in RUN_USING_ENCODER mode.
-                
-                flywheel.setVelocity(targetTicksPerSec);
-
-                // Check if we've reached minimum speed to launch
-                if (flywheel.getVelocity() > minTicksPerSec) {
-                    launchState = LaunchState.LAUNCH;
-                }
-                break;
-            case LAUNCH:
-                // Activate feeder to push a ring into the flywheel
-                feeder.setPower(FULL_SPEED);     
-                // Start timer to time the feeding duration       
-                feederTimer.reset();
-                launchState = LaunchState.LAUNCHING;
-                break;
-            case LAUNCHING:
-                // Keep feeder running for set time
-                if (feederTimer.seconds() > FEED_TIME_SECONDS) {
-                    launchState = LaunchState.IDLE;
-                    // Stop feeder
-                    feeder.setPower(STOP_SPEED);
-                    // stop flywheel too
-                    flywheel.setPower(STOP_SPEED);                    
-                }
-                break;
-        }
     }
 }

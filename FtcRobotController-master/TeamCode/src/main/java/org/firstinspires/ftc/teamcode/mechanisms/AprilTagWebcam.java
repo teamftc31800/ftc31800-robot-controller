@@ -21,6 +21,7 @@ public class AprilTagWebcam {
     private VisionPortal visionPortal;
     private List<AprilTagDetection> detectedTags = new ArrayList<>();
     private Telemetry telemetry;
+
     public void init(HardwareMap hwMap, Telemetry telemetry) {
         this.telemetry = telemetry;
 
@@ -54,6 +55,7 @@ public class AprilTagWebcam {
     public void update() {
         detectedTags = aprilTagProcessor.getDetections();
     }
+
 
 
     public void displayDetectionTelemetry(AprilTagDetection detectionId) {
@@ -91,4 +93,10 @@ public class AprilTagWebcam {
             visionPortal.close();
         }
     }
+
+    public void reportHardwareStatus() {
+        telemetry.addLine("Webcam 1");
+    }
+
+
 }
