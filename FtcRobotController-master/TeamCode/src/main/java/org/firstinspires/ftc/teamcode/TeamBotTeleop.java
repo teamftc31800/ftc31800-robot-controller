@@ -14,6 +14,7 @@ import com.qualcomm.robotcore.util.Range;
 
 import org.firstinspires.ftc.teamcode.mechanisms.AprilTagWebcam;
 import org.firstinspires.ftc.teamcode.mechanisms.FeederLauncher;
+import org.firstinspires.ftc.teamcode.mechanisms.RGBIndicatorLight;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 
 
@@ -79,6 +80,8 @@ public class TeamBotTeleop extends OpMode {
     FeederLauncher leftFeederLauncher = new FeederLauncher();
 
     FeederLauncher rightFeederLauncher = new FeederLauncher();
+
+    RGBIndicatorLight light = new RGBIndicatorLight();
 
 
     @Override
@@ -166,6 +169,10 @@ public class TeamBotTeleop extends OpMode {
 
         //AprilTag
         aprilTagWebcam.init(hardwareMap,telemetry);
+        aprilTagWebcam.setRangeTolerance(5);
+        aprilTagWebcam.setBearingTolerance(5);
+        aprilTagWebcam.setTargetRange(45);
+        aprilTagWebcam.setTargetBearing(5);
 
 //
 //        telemetry.addLine("Init complete. Check missing hardware below.");
@@ -174,6 +181,8 @@ public class TeamBotTeleop extends OpMode {
         leftFeederLauncher.reportHardwareStatus();
         rightFeederLauncher.reportHardwareStatus();
 
+        light.init(hardwareMap,telemetry,"indicator");
+        light.blue();
 
     }
 
@@ -186,6 +195,14 @@ public class TeamBotTeleop extends OpMode {
         aprilTagWebcam.displayDetectionTelemetry(id20);
         AprilTagDetection id24 = aprilTagWebcam.getTagBySpecificId(24);
         aprilTagWebcam.displayDetectionTelemetry(id24);
+
+        //Todo Blue vs Red alliance based checking based on gamepad selection.
+        if (aprilTagWebcam.IsRobotinZone(24)) {
+            telemetry.addLine("Robot in Zone to shoot");
+            light.green();
+        } else {
+            light.off();
+        }
 
         //----------------------------------
         // 1. DRIVE: mecanum with gamepad1

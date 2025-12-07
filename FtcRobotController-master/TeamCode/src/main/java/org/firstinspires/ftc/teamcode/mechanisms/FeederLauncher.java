@@ -14,51 +14,49 @@ import org.firstinspires.ftc.teamcode.TeamBotTeleop;
 public class FeederLauncher {
 
     private Telemetry telemetry;
-    private CRServo feeder = null;
+    private CRServo feeder = null;    // Continuous rotation servo that pushes rings/pixels into shooter
 
-    private DcMotorEx flywheel = null;
+    private DcMotorEx flywheel = null; // Shooter flywheel motor
 
-    private final double FLYWHEEL_DEFAULT_VELOCITY = 1500; // start around mid-speed; tune with dpad
+    private final double FLYWHEEL_DEFAULT_VELOCITY = 1500; // Default target RPM for flywheel
+    private double targetFlywheelRPM = FLYWHEEL_DEFAULT_VELOCITY; // Current commanded flywheel RPM
 
-    private double targetFlywheelRPM = FLYWHEEL_DEFAULT_VELOCITY; // start around mid-speed; tune with dpad
+    private boolean hasFlywheel = false; // Used to avoid null pointer if hardware missing
+    private boolean hasFeeder = false;   // Used to avoid null pointer if hardware missing
 
-    private boolean hasFlywheel = false;
-    private boolean hasFeeder = false;
+    private double targetDistance = 0; // (Unused) Placeholder for distance-based shooting
 
-    private double targetDistance = 0;
+    private double largest_overshoot = 0; // Tracks biggest RPM overshoot while tuning
 
-    private double largest_overshoot = 0;
+    final double ticksPerRev = 28.0; // <<< YOUR FLYWHEEL ENCODER TICKS/REV HERE
 
-    final double ticksPerRev = 28.0; // *** TODO: PUT YOUR FLYWHEEL ENCODER TICKS/REV HERE ***
+    final double FLYWHEEL_MIN_VELOCITY_PERCENT = 0.9; // 90% of target RPM threshold (unused)
 
-    final double FLYWHEEL_MIN_VELOCITY_PERCENT = 0.9; // 90% of target speed
+    ElapsedTime feederTimer = new ElapsedTime(); // Timer used to control feeder firing window
 
-    ElapsedTime feederTimer = new ElapsedTime();
+    final double FEED_TIME_SECONDS = 0.20; // Time in seconds feeder activates per shot
+    final double STOP_SPEED = 0.0;         // Command to stop the CR servo
+    final double FULL_SPEED = 1.0;         // Max CR servo power
 
-    final double FEED_TIME_SECONDS = 0.20; //The feeder servos run this long when a shot is requested.
-    final double STOP_SPEED = 0.0; //We send this power to the servos when we want them to stop.
-    final double FULL_SPEED = 1.0;
-
+    // State machine for shot sequencing
     private enum LaunchState {
-        IDLE,
-        FEED,
-        GET_READY,
-        LAUNCHING,
-        LAUNCHED
+        IDLE,         // Not shooting
+        SPIN_UP,      // Flywheel is ramping up to target speed
+        LAUNCHING,    // Feeder pushing item into flywheel
+        LAUNCHED      // Completed shot
     }
 
     private double servoPower = 0.0;
     LaunchState launchState = LaunchState.IDLE;
-    private boolean onceOveride = false;
+    private boolean onceOveride = false;   // Ensures deltaRPM applies only once
 
-    private boolean shoot = false;
-    private static final double FLYWHEEL_TOLERANCE = 200.0;  // +/- RPM window
+    private boolean shoot = false;         // Flags when a shot sequence begins
+    private static final double FLYWHEEL_TOLERANCE = 200.0;  // +/- allowable RPM error
 
-    // Debounce: require N consecutive "in-tolerance" reads before feeding
+    // Require N consecutive speed readings to be in tolerance
     private int inToleranceCount = 0;
-
     private static final int IN_TOLERANCE_REQUIRED = 1;
-    
+
     private String flyWheelName;
     private String feederName;
 
@@ -68,118 +66,126 @@ public class FeederLauncher {
         this.flyWheelName = launcherName;
         this.feederName = feederName;
 
+        // Attempt to assign flywheel motor from configuration
         try {
             flywheel = hwMap.get(DcMotorEx.class, launcherName);
-
         } catch (Exception e) {
             telemetry.addData("⚠️ Launcher not found", launcherName);
         }
 
+        // Attempt to assign feeder CR servo
         try {
             feeder = hwMap.get(CRServo.class, feederName);
         } catch (Exception e) {
             telemetry.addData("⚠️ Feeder not found", feederName);
         }
 
-
+        // Set availability flags
         hasFlywheel = (flywheel != null);
         hasFeeder = (feeder != null);
 
+        // Stop feeder initially
         if (hasFeeder) {
             feeder.setPower(0.0);
         }
 
+        // Configure flywheel if present
         if (hasFlywheel) {
-            // Shooter usually FLOATS on zero, so wheel can spin down naturally.
-            flywheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
-
-            // Optional: run without encoder for now, we’ll manually set velocity later.
-            // We’ll switch to RUN_USING_ENCODER so .setVelocity() works in loop()
-            flywheel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-            flywheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            flywheel.setDirection(DcMotor.Direction.REVERSE);
+            flywheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT); // Allows spin-down
+            flywheel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);       // Reset encoder
+            flywheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);            // Required for setVelocity()
+            flywheel.setDirection(DcMotor.Direction.REVERSE);               // Typical shooter direction
         }
-
-
     }
 
+    // Called when user requests a shot
     public void update(double targetRPM, double deltaRPM, boolean override, boolean feed) {
-        if (!shoot && feed) {
-            //this.targetDistance = distance;
+        if (!shoot && feed) { // Start sequence only if not already shooting
+
             double targetTPS = 0;
-            // compute target flywheel rpm based on distance.
+
+            // If not overriding, use the direct requested RPM
             if (!override) {
                 targetFlywheelRPM = targetRPM;
             }
 
+            // If overriding, apply deltaRPM ONCE
             if (override && !onceOveride) {
                 targetFlywheelRPM += deltaRPM;
                 onceOveride = true;
             }
 
-            //start the flywheel before feeder in the update itself.
+            // Convert RPM to ticks/sec and set flywheel velocity
             if (hasFlywheel) {
                 targetTPS = rpmToTicksPerSec(targetFlywheelRPM, ticksPerRev);
-
                 flywheel.setVelocity(targetTPS);
             }
-            shoot = true;
-            launchState = LaunchState.IDLE;
+
+            shoot = true;                       // Signal that shot process has begun
+            launchState = LaunchState.SPIN_UP;  // Begin flywheel ramp-up
         }
     }
 
-    public void Launch( ) {
+    public void Launch() {
 
         double targetTPS = 0;
 
         switch (launchState) {
             case IDLE:
+                break;
+
+            case SPIN_UP:
                 if (hasFlywheel) {
-
-                    // Read actual RPM
-                    double currentTPS = flywheel.getVelocity(); // ticks/sec
+                    // Get actual flywheel RPM
+                    double currentTPS = flywheel.getVelocity();
                     double currentRPM = ticksPerSecToRPM(currentTPS, ticksPerRev);
-                    boolean atSpeed = Math.abs(currentRPM - targetFlywheelRPM) <= FLYWHEEL_TOLERANCE;
 
+                    boolean atSpeed =
+                            Math.abs(currentRPM - targetFlywheelRPM) <= FLYWHEEL_TOLERANCE;
+
+                    // Track maximum overshoot for tuning
                     double overshoot = currentRPM - targetFlywheelRPM;
                     if (overshoot > largest_overshoot) {
                         largest_overshoot = overshoot;
                     }
+
+                    // If speed reached, move to launch
                     if (atSpeed) {
                         inToleranceCount = Math.min(inToleranceCount + 1, IN_TOLERANCE_REQUIRED);
-                        launchState = LaunchState.GET_READY;
+                        launchState = LaunchState.LAUNCHING;
                     } else {
                         inToleranceCount = 0;
                     }
+
+                    // Telemetry for tuning
                     telemetry.addData("Flywheel", "Target %.0f RPM | Now %.0f RPM %s",
                             targetFlywheelRPM, currentRPM, atSpeed ? "(near target)" : "");
                     telemetry.addData("Flywheel", "Target %.0f TPS | Now %.0f TPS %s",
                             targetTPS, currentTPS, atSpeed ? "(near target)" : "");
                     telemetry.addData("Largest Overshoot", largest_overshoot);
-
                 }
-
                 break;
+
             case LAUNCHING:
-                servoPower = -1.0;
-                if (hasFeeder && shoot) {
-                    feeder.setPower(servoPower);
-                    launchState = LaunchState.LAUNCHED;
+                servoPower = -1.0; // Push item into flywheel (direction depends on servo mounting)
 
+                if (hasFeeder && shoot) {
+                    feeder.setPower(servoPower);      // Activate feeder
+                    launchState = LaunchState.LAUNCHED; // Move to next state
                 }
                 break;
+
             case LAUNCHED:
-                servoPower = 0;
+                servoPower = 0; // Stop feeder
+
                 if (hasFeeder && shoot) {
                     feeder.setPower(servoPower);
-                    shoot = false;
-                    launchState = LaunchState.IDLE;
+                    shoot = false;                  // End launch event
+                    launchState = LaunchState.SPIN_UP; // Keep wheel spinning for next shot
                 }
                 break;
-                
         }
     }
-
 
     // -------------------------------------------------
     // Math helpers for flywheel RPM <-> ticks/sec
@@ -195,23 +201,21 @@ public class FeederLauncher {
     }
 
     public void reportHardwareStatus() {
-
-        telemetry.addData(flyWheelName, hasFlywheel ? "OK" : "MISSING");
-        telemetry.addData(feederName, hasFeeder ? "OK" : "MISSING");
-
+        telemetry.addData(flyWheelName, hasFlywheel ? "OK" : "MISSING"); // Report flywheel status
+        telemetry.addData(feederName, hasFeeder ? "OK" : "MISSING");     // Report feeder status
     }
 
     public void stop() {
         if (hasFlywheel) {
-            flywheel.setPower(0);
+            flywheel.setPower(0); // Stop flywheel motor
         }
         if (hasFeeder) {
-            feeder.setPower(0);
+            feeder.setPower(0);   // Stop feeder
         }
-
+        launchState = LaunchState.IDLE; // Reset state machine
     }
 
-    //rotate backwards to release the artifact
+    // Rotate backwards to clear jams ("reverse shooter")
     public void recoverFromStuck() {
         if (hasFlywheel) {
             flywheel.setPower(-1);
@@ -220,9 +224,4 @@ public class FeederLauncher {
             feeder.setPower(1);
         }
     }
-
 }
-
-
-
-
