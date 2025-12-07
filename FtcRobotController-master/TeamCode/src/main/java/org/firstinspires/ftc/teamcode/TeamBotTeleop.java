@@ -255,14 +255,14 @@ public class TeamBotTeleop extends OpMode {
 
         if (gamepad2.dpad_left) {
 //            leftServoPower = -1.0;    // forward
-            leftFeederLauncher.update(0,0,true, true);
+            leftFeederLauncher.launch(0,0,true, true);
         }
-        leftFeederLauncher.Launch();
+        leftFeederLauncher.update();
         if (gamepad2.dpad_right) {
 //            rightServoPower = -1.0;   // forward
-            rightFeederLauncher.update(0,0,true,true);
+            rightFeederLauncher.launch(0,0,true,true);
         }
-        rightFeederLauncher.Launch();
+        rightFeederLauncher.update();
 
 //        if (hasFeederServoLeft) {
 //            feederServoLeft.setPower(leftServoPower);
@@ -429,4 +429,13 @@ public class TeamBotTeleop extends OpMode {
         double ticksPerMin = ticksPerSec * 60.0;
         return ticksPerMin / ticksPerRev;
     }
+
+    @Override
+    public void start() {
+        //start running the flywheel of left and right feederlauncher at the start itself.
+        //But not ready to shoot
+        leftFeederLauncher.launch(0,0,false, false);
+        rightFeederLauncher.launch(0,0,false, false);
+    }
+
 }

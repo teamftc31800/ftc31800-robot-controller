@@ -34,7 +34,7 @@ public class FeederLauncher {
 
     ElapsedTime feederTimer = new ElapsedTime(); // Timer used to control feeder firing window
 
-    final double FEED_TIME_SECONDS = 0.20; // Time in seconds feeder activates per shot
+    final double FEED_TIME_MILLI_SECONDS = 200; // Time in seconds feeder activates per shot
     final double STOP_SPEED = 0.0;         // Command to stop the CR servo
     final double FULL_SPEED = 1.0;         // Max CR servo power
 
@@ -96,13 +96,15 @@ public class FeederLauncher {
             flywheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);            // Required for setVelocity()
             flywheel.setDirection(DcMotor.Direction.REVERSE);               // Typical shooter direction
         }
+
+        LaunchState launchState = LaunchState.IDLE;
+
     }
 
     // Called when user requests a shot
-    public void update(double targetRPM, double deltaRPM, boolean override, boolean feed) {
+    public void launch(double targetRPM, double deltaRPM, boolean override, boolean feed) {
+        double targetTPS = 0;
         if (!shoot && feed) { // Start sequence only if not already shooting
-
-            double targetTPS = 0;
 
             // If not overriding, use the direct requested RPM
             if (!override) {
@@ -124,9 +126,15 @@ public class FeederLauncher {
             shoot = true;                       // Signal that shot process has begun
             launchState = LaunchState.SPIN_UP;  // Begin flywheel ramp-up
         }
+        else {
+            if (hasFlywheel) {
+                targetTPS = rpmToTicksPerSec(targetFlywheelRPM, ticksPerRev);
+                flywheel.setVelocity(targetTPS);
+            }
+        }
     }
 
-    public void Launch() {
+    public void update() {
 
         double targetTPS = 0;
 
@@ -149,8 +157,8 @@ public class FeederLauncher {
                         largest_overshoot = overshoot;
                     }
 
-                    // If speed reached, move to launch
-                    if (atSpeed) {
+                    // If speed reached, move to launching
+                    if (atSpeed && shoot) {
                         inToleranceCount = Math.min(inToleranceCount + 1, IN_TOLERANCE_REQUIRED);
                         launchState = LaunchState.LAUNCHING;
                     } else {
@@ -169,18 +177,24 @@ public class FeederLauncher {
             case LAUNCHING:
                 servoPower = -1.0; // Push item into flywheel (direction depends on servo mounting)
 
-                if (hasFeeder && shoot) {
-                    feeder.setPower(servoPower);      // Activate feeder
-                    launchState = LaunchState.LAUNCHED; // Move to next state
+                if (hasFeeder) {
+                    if (shoot) {
+                        feeder.setPower(servoPower);      // Activate feeder
+                        feederTimer.reset();
+                        shoot = false;
+                    } else {
+                        //rotate feeder enough to release the artifact. might require tuning
+                        if (feederTimer.milliseconds() > FEED_TIME_MILLI_SECONDS) {
+                            launchState = LaunchState.LAUNCHED; // Move to next state
+                        }
+                    }
                 }
                 break;
 
             case LAUNCHED:
                 servoPower = 0; // Stop feeder
-
-                if (hasFeeder && shoot) {
+                if (hasFeeder) {
                     feeder.setPower(servoPower);
-                    shoot = false;                  // End launch event
                     launchState = LaunchState.SPIN_UP; // Keep wheel spinning for next shot
                 }
                 break;
@@ -223,5 +237,7 @@ public class FeederLauncher {
         if (hasFeeder) {
             feeder.setPower(1);
         }
+        launchState = LaunchState.IDLE; // Reset state machine
+        shoot = false;
     }
 }
