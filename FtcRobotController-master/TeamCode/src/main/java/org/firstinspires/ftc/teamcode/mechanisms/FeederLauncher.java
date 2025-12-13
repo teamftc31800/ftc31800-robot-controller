@@ -9,7 +9,7 @@ import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
-import org.firstinspires.ftc.teamcode.TeamBotTeleop;
+
 
 public class FeederLauncher {
 
@@ -39,7 +39,7 @@ public class FeederLauncher {
     final double FULL_SPEED = 1.0;         // Max CR servo power
 
     // State machine for shot sequencing
-    private enum LaunchState {
+    public enum LaunchState {
         IDLE,         // Not shooting
         SPIN_UP,      // Flywheel is ramping up to target speed
         LAUNCHING,    // Feeder pushing item into flywheel
@@ -239,5 +239,9 @@ public class FeederLauncher {
         }
         launchState = LaunchState.IDLE; // Reset state machine
         shoot = false;
+    }
+
+    public LaunchState getStatus() {
+        return launchState;
     }
 }
