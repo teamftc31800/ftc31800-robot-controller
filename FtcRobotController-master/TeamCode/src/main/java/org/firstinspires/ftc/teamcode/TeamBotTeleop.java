@@ -21,6 +21,13 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 @TeleOp(name="TeamBotTeleop", group="Drive")
 public class TeamBotTeleop extends OpMode {
 
+    private AprilTagWebcam aprilTagWebcam;
+    private RGBIndicatorLight light;
+
+       
+    private int shootInRangeCount = 0;
+    private static final int SHOOT_DEBOUNCE_FRAMES = 3;
+
     // Drivetrain motors (312 rpm goBILDA)
     private DcMotor frontLeft  = null;
     private DcMotor frontRight = null;
@@ -61,7 +68,9 @@ public class TeamBotTeleop extends OpMode {
     // Ticks per revolution (output shaft)
     // Adjust if your exact models differ.
     private static final double FLYWHEEL_TPR = 28.0;     // e.g., high-RPM 6000 motor often ~28 tpr at output (check your unit)
-    private static final double FEEDER_TPR   = 537.7;    // goBILDA 312 rpm (19.2:1) ≈ 537.7 tpr
+    private static final double FEEDER_TPR   = 537.7; 
+
+    // goBILDA 312 rpm (19.2:1) ≈ 537.7 tpr
 
     private static final double FEEDER_RPM = 400;
 
@@ -169,10 +178,10 @@ public class TeamBotTeleop extends OpMode {
 
         //AprilTag
         aprilTagWebcam.init(hardwareMap,telemetry);
-        aprilTagWebcam.setRangeTolerance(5);
-        aprilTagWebcam.setBearingTolerance(5);
-        aprilTagWebcam.setTargetRange(45);
-        aprilTagWebcam.setTargetBearing(5);
+        aprilTagWebcam.setRangeTolerance(12);
+        aprilTagWebcam.setBearingTolerance(2);
+        aprilTagWebcam.setTargetRange(0);
+        aprilTagWebcam.setTargetBearing(8);
 
 //
 //        telemetry.addLine("Init complete. Check missing hardware below.");
@@ -197,12 +206,37 @@ public class TeamBotTeleop extends OpMode {
         aprilTagWebcam.displayDetectionTelemetry(id24);
 
         //Todo Blue vs Red alliance based checking based on gamepad selection.
-        if (aprilTagWebcam.IsRobotinZone(24)) {
-            telemetry.addLine("Robot in Zone to shoot");
+
+        AprilTagDetection goalTag = aprilTagWebcam.getTagBySpecificId(24);
+
+        if (goalTag != null) {
+            telemetry.addData("Tag24 Range (in)", goalTag.ftcPose.range);
+            telemetry.addData("Tag24 Bearing (deg)", goalTag.ftcPose.bearing);
+        }
+
+       boolean inShootRange = aprilTagWebcam.IsRobotinZone(24);
+
+        if (inShootRange) {
+            shootInRangeCount++;
+        } else {
+            shootInRangeCount = 0;
+        }
+
+        if (shootInRangeCount >= SHOOT_DEBOUNCE_FRAMES) {
+            telemetry.addLine("✅ SHOOT RANGE (~1 ft)");
             light.green();
         } else {
             light.off();
         }
+
+        AprilTagDetection goalTag = aprilTagWebcam.getTagBySpecificId(24);
+
+        if (goalTag != null) {
+            telemetry.addData("Tag24 Range (in)", goalTag.ftcPose.range);
+            telemetry.addData("Tag24 Bearing (deg)", goalTag.ftcPose.bearing);
+        }
+
+
 
         //----------------------------------
         // 1. DRIVE: mecanum with gamepad1
