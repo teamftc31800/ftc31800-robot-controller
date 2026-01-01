@@ -25,4 +25,6 @@ android {
 
 dependencies {
     implementation project(':FtcRobotController')
+    // Pedro Pathing - use the version you want (example)
+    implementation 'com.pedropathing:ftc:2.0.4'
 }
