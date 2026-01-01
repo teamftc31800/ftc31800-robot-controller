@@ -236,10 +236,10 @@ public class TeamBotTeleop_latest extends OpMode {
         double x  =  gamepad1.left_stick_x;   // strafe right = +1
         double rx =  gamepad1.right_stick_x;  // rotate right = +1
 
-        double flPower = y - x + rx;
-        double blPower = y + x + rx;
-        double frPower = y + x - rx;
-        double brPower = y - x - rx;
+        double flPower = y + x + rx;
+        double blPower = y - x + rx;
+        double frPower = y - x - rx;
+        double brPower = y + x - rx;
 
         double max = Math.max(Math.abs(y) + Math.abs(x) + Math.abs(rx), 1);
         flPower /= max;
