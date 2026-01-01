@@ -1,24 +1,22 @@
 
+
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
-import com.qualcomm.robotcore.util.ElapsedTime;
-
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.util.ElapsedTime;
+
+import org.firstinspires.ftc.teamcode.mechanisms.FeederLauncher;
 
 
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
-import com.qualcomm.robotcore.hardware.HardwareMap;
 //import com.qualcomm.robotcore.hardware.ConfigurationType;
 //import com.qualcomm.robotcore.hardware.HardwareDevice;
 
-import com.qualcomm.robotcore.util.Range;
 
-@Autonomous(name="TeamBotAuto", group="Drive")
-public class TeamBotAuto extends OpMode {
+@Autonomous(name="RedTeamBotAutoSimple", group="Drive")
+public class RedTeamBotAutoSimple extends OpMode {
 
     // Drivetrain motors (312 rpm goBILDA)
     private DcMotor frontLeft  = null;
@@ -33,8 +31,8 @@ public class TeamBotAuto extends OpMode {
     private DcMotorEx flywheel = null;
 
     // Flywheel target RPM (we’ll let you tune live)
-    private double targetFlywheelRPM = 1500; // start around mid-speed; tune with dpad
-    private double MinFlywheelRPM = targetFlywheelRPM * 0.80; // start around mid-speed; tune with dpad
+    private double targetFlywheelRPM = 1800; // start around mid-speed; tune with dpad
+    private double MinFlywheelRPM = targetFlywheelRPM * 0.90; // start around mid-speed; tune with dpad
 
     // Convenience: did each motor initialize?
     private boolean hasFrontLeft  = false;
@@ -44,7 +42,7 @@ public class TeamBotAuto extends OpMode {
     private boolean hasIntake     = false;
     private boolean hasFlywheel   = false;
 
-    static final double AUTOPOWER   = 0.1;
+    static final double AUTOPOWER   = -0.5;
 
     double flPower = AUTOPOWER;
     double blPower = AUTOPOWER;
@@ -54,19 +52,36 @@ public class TeamBotAuto extends OpMode {
     double intakePower = 0.0;
 
     ElapsedTime DriveTimer = new ElapsedTime();
-    ElapsedTime FeedTimer = new ElapsedTime();
+    ElapsedTime LaunchTimer = new ElapsedTime();
+
+    ElapsedTime StrafeTimer = new ElapsedTime();
+
+    private final FeederLauncher leftFeederLauncher  = new FeederLauncher();
+    private final FeederLauncher rightFeederLauncher = new FeederLauncher();
 
     double ticksPerRev = 28.0; // *** TODO: PUT YOUR FLYWHEEL ENCODER TICKS/REV HERE ***
     double targetTicksPerSec = rpmToTicksPerSec(targetFlywheelRPM, ticksPerRev);
     double targetMinTicksPerSec = rpmToTicksPerSec(MinFlywheelRPM, ticksPerRev);
 
-    final double DRIVETIME = 2.0;
+    final double DRIVETIME = 1.3;
 
-    private enum AutonomousState {
-        LAUNCHING,
-        LAUNCH,
+    final double LAUNCHTIME = 7.0;
+
+    final double STRAFETIME = 1.3;
+
+    private enum AutonomousState {        
+
         DRIVING,
         DRIVE_TO_POSITION,
+
+        LAUNCHING,
+        LAUNCH,
+
+        LAUNCH_UPDATE,
+
+        STRAFING,
+
+        STRAFE_TO_POSITION,
         STOP,
     }
     private AutonomousState autoState;
@@ -90,6 +105,10 @@ public class TeamBotAuto extends OpMode {
         hasBackRight  = (backRight  != null);
         hasIntake     = (intake     != null);
         hasFlywheel   = (flywheel   != null);
+
+        leftFeederLauncher.init(hardwareMap, telemetry, "launcher", "feederServoLeft");
+        rightFeederLauncher.init(hardwareMap, telemetry, "launcher", "feederServoRight");
+
 
         // Reverse directions so forward stick actually drives forward.
         // Common mecanum setup: left side reversed, right side normal.
@@ -119,14 +138,16 @@ public class TeamBotAuto extends OpMode {
             flywheel.setDirection(DcMotor.Direction.REVERSE);
 
 
-
+            
 
         }
 
-        autoState = AutonomousState.LAUNCHING;
-
+        autoState = AutonomousState.DRIVING;
+        leftFeederLauncher.reportHardwareStatus();
+        rightFeederLauncher.reportHardwareStatus();
         telemetry.addLine("Init complete. Check missing hardware below.");
         reportHardwareStatus();
+
     }
 
     @Override
@@ -136,50 +157,8 @@ public class TeamBotAuto extends OpMode {
         switch (autoState) {
 
 
-            case LAUNCHING:
+            case DRIVING:
             {
-                // Spin up the flywheel to target RPM
-                if (hasFlywheel) {
-                    flywheel.setVelocity(targetTicksPerSec);
-                }
-
-                autoState = AutonomousState.LAUNCH;
-                break;
-            }
-
-
-
-            case LAUNCH:
-            {
-
-                if (hasFlywheel) {
-                    if (flywheel.getVelocity() < targetMinTicksPerSec) {
-                        // Not up to speed yet, wait
-                        autoState = AutonomousState.LAUNCH;
-                        break;
-                    }
-                }
-                // Activate intake to feed rings into flywheel
-                if (hasIntake) {
-                    intake.setPower(1.0); // Full power intake
-                }
-
-
-
-
-                autoState = AutonomousState.DRIVING;
-                break;
-            }
-
-            case DRIVING:{
-
-                // Stop intake and flywheel
-                if (hasIntake) {
-                    intake.setPower(0);
-                }
-                if (hasFlywheel) {
-                    flywheel.setPower(0);
-                }
 
                 flPower = AUTOPOWER;
                 blPower = AUTOPOWER;
@@ -196,8 +175,9 @@ public class TeamBotAuto extends OpMode {
 
                 autoState = AutonomousState.DRIVE_TO_POSITION;
                 break;
-            }
 
+
+            }
 
             case DRIVE_TO_POSITION:
             {
@@ -228,9 +208,92 @@ public class TeamBotAuto extends OpMode {
                 if (hasFrontRight) frontRight.setPower(0);
                 if (hasBackRight)  backRight.setPower(0);
 
+                autoState = AutonomousState.LAUNCH;
+                break;
+            }
+
+            case LAUNCH:
+            {
+                leftFeederLauncher.launch(2750, 0, true, true);
+                rightFeederLauncher.launch(2750, 0, true, true);
+                LaunchTimer.reset();
+                autoState = AutonomousState.LAUNCH_UPDATE;
+
+
+                break;
+            }
+
+            case LAUNCH_UPDATE: {
+
+                if (LaunchTimer.seconds() < LAUNCHTIME) {
+                    leftFeederLauncher.update();
+                    rightFeederLauncher.update();
+
+                    leftFeederLauncher.reportHardwareStatus();
+                    rightFeederLauncher.reportHardwareStatus();
+
+                } else {
+                    autoState = AutonomousState.STRAFING;
+                }
+
+                break;
+            }
+
+            case STRAFING:
+            {
+
+                flPower = AUTOPOWER;
+                blPower = -AUTOPOWER;
+                frPower = -AUTOPOWER;
+                brPower = AUTOPOWER;
+
+                // Send power only if that motor exists
+                if (hasFrontLeft)  frontLeft.setPower(flPower);
+                if (hasBackLeft)   backLeft.setPower(blPower);
+                if (hasFrontRight) frontRight.setPower(frPower);
+                if (hasBackRight)  backRight.setPower(brPower);
+                StrafeTimer.reset();
+
+
+                autoState = AutonomousState.STRAFE_TO_POSITION;
+                break;
+
+
+            }
+
+            case STRAFE_TO_POSITION:
+            {
+                // Continue driving until a certain condition is met.
+                // For example, drive for 2 seconds or until a sensor is triggered.
+                // Here, we'll just simulate a wait using a simple counter or timer.
+                // In a real robot, you'd use elapsed time or encoder counts.
+
+                // For demonstration, let's assume we drive for 2 seconds.
+                // You would need to implement a timer to track this.
+
+                if (StrafeTimer.seconds() < STRAFETIME) {
+                    // Keep driving
+                    autoState = AutonomousState.STRAFE_TO_POSITION;
+                    if (hasFrontLeft)  frontLeft.setPower(flPower);
+                    if (hasBackLeft)   backLeft.setPower(blPower);
+                    if (hasFrontRight) frontRight.setPower(frPower);
+                    if (hasBackRight)  backRight.setPower(brPower);
+                    break;
+                }
+
+
+
+
+                // After driving, stop the robot
+                if (hasFrontLeft)  frontLeft.setPower(0);
+                if (hasBackLeft)   backLeft.setPower(0);
+                if (hasFrontRight) frontRight.setPower(0);
+                if (hasBackRight)  backRight.setPower(0);
+
                 autoState = AutonomousState.STOP;
                 break;
             }
+
 
 
             case STOP:
@@ -400,4 +463,12 @@ public class TeamBotAuto extends OpMode {
         double ticksPerMin = ticksPerSec * 60.0;
         return ticksPerMin / ticksPerRev;
     }
+
+    @Override
+    public void start() {
+        // Start flywheels on launchers (not ready to shoot)
+        leftFeederLauncher.launch(0, 0, false, false);
+        rightFeederLauncher.launch(0, 0, false, false);
+    }
+
 }
