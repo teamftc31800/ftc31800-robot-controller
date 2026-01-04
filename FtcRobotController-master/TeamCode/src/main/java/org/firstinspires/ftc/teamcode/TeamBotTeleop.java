@@ -114,6 +114,18 @@ public class TeamBotTeleop extends OpMode {
         if (hasBackRight)  backRight.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         if (hasIntake)     intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
+        frontLeft.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        frontRight.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        backLeft.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        backRight.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        frontLeft.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        frontRight.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        backLeft.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        backRight.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+
+
+
         // Feeder motor
         try {
             feederMotor = hardwareMap.get(DcMotorEx.class, "feeder");
@@ -195,10 +207,13 @@ public class TeamBotTeleop extends OpMode {
         double x  =  gamepad1.left_stick_x;   // strafe right = +1
         double rx =  gamepad1.right_stick_x;  // rotate right = +1
 
-        double flPower = y - x + rx;
-        double blPower = y + x + rx;
-        double frPower = y + x - rx;
-        double brPower = y - x - rx;
+        double flPower = y + x + rx;
+        double blPower = y - x + rx;
+        double frPower = y - x - rx;
+        double brPower = y + x - rx;
+
+
+
 
         double max = Math.max(Math.abs(y) + Math.abs(x) + Math.abs(rx), 1);
         flPower /= max;
@@ -210,6 +225,23 @@ public class TeamBotTeleop extends OpMode {
         if (hasBackLeft)   backLeft.setPower(blPower);
         if (hasFrontRight) frontRight.setPower(frPower);
         if (hasBackRight)  backRight.setPower(brPower);
+
+
+        telemetry.addData("FrontLeft power",flPower);
+        telemetry.addData("BackLeft power",blPower);
+        telemetry.addData("FrontRight power",frPower);
+        telemetry.addData("BackRight power",brPower);
+
+        telemetry.addData("FrontLeft get power",frontLeft.getPower());
+        telemetry.addData("BackLeft get power",backLeft.getPower());
+        telemetry.addData("FrontRight get power",frontRight.getPower());
+        telemetry.addData("BackRight get power",backRight.getPower());
+
+        telemetry.addData("FL encoder", frontLeft.getCurrentPosition());
+        telemetry.addData("FR encoder", frontRight.getCurrentPosition());
+        telemetry.addData("BL encoder", backLeft.getCurrentPosition());
+        telemetry.addData("BR encoder", backRight.getCurrentPosition());
+
 
         //----------------------------------
         // 2. INTAKE CONTROL (gamepad2 A/B/X)
@@ -240,9 +272,9 @@ public class TeamBotTeleop extends OpMode {
         rightFeederLauncher.update();
 
         // Hardware status
-        reportHardwareStatus();
-        leftFeederLauncher.reportHardwareStatus();
-        rightFeederLauncher.reportHardwareStatus();
+     //   reportHardwareStatus();
+     //   leftFeederLauncher.reportHardwareStatus();
+     //   rightFeederLauncher.reportHardwareStatus();
 
         telemetry.update();
     }

@@ -33,7 +33,7 @@ public class FeederLauncher {
 
     ElapsedTime feederTimer = new ElapsedTime(); // Timer used to control feeder firing window
 
-    final double FEED_TIME_MILLI_SECONDS = 10000; // Time in seconds feeder activates per shot
+    final double FEED_TIME_MILLI_SECONDS = 1500; // Time in milliseconds feeder activates per shot
     final double STOP_SPEED = 0.0;         // Command to stop the CR servo
     final double FULL_SPEED = 1.0;         // Max CR servo power
 
@@ -47,14 +47,13 @@ public class FeederLauncher {
 
     private double servoPower = 0.0;
     LaunchState launchState = LaunchState.IDLE;
-    private boolean onceOveride = false;   // Ensures deltaRPM applies only once
 
     private boolean shoot = false;         // Flags when a shot sequence begins
-    private static final double FLYWHEEL_TOLERANCE = 100.0;  // +/- allowable RPM error
+    private static final double FLYWHEEL_TOLERANCE = 50.01383194;  // +/- allowable RPM error
 
     // Require N consecutive speed readings to be in tolerance
     private int inToleranceCount = 0;
-    private static final int IN_TOLERANCE_REQUIRED = 1;
+    private static final int IN_TOLERANCE_REQUIRED = 5;
 
     private String flyWheelName;
     private String feederName;
@@ -93,7 +92,7 @@ public class FeederLauncher {
             flywheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT); // Allows spin-down
             flywheel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);       // Reset encoder
             flywheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);            // Required for setVelocity()
-            flywheel.setDirection(DcMotor.Direction.REVERSE);               // Typical shooter direction
+            flywheel.setDirection(DcMotor.Direction.FORWARD);               // Typical shooter direction
         }
 
         LaunchState launchState = LaunchState.IDLE;
@@ -101,19 +100,18 @@ public class FeederLauncher {
     }
 
     // Called when user requests a shot
-    public void launch(double targetRPM, double deltaRPM, boolean override, boolean feed) {
+    public void launch(double targetRPM, double deltaRPM, boolean override,boolean feed) {
         double targetTPS = 0;
         if (!shoot && feed) { // Start sequence only if not already shooting
 
-            // If not overriding, use the direct requested RPM
-            if (!override) {
-                targetFlywheelRPM = targetRPM;
-            }
+            // If overriding, use the direct requested RPM
 
             // If overriding, apply deltaRPM ONCE
-            if (override && !onceOveride) {
+            if (override) {
+                if (targetRPM > 0 ) {
+                    targetFlywheelRPM = targetRPM;
+                }
                 targetFlywheelRPM += deltaRPM;
-                onceOveride = true;
             }
 
             // Convert RPM to ticks/sec and set flywheel velocity
@@ -159,10 +157,14 @@ public class FeederLauncher {
                     // If speed reached, move to launching
                     if (atSpeed && shoot) {
                         inToleranceCount = Math.min(inToleranceCount + 1, IN_TOLERANCE_REQUIRED);
-                        launchState = LaunchState.LAUNCHING;
                     } else {
                         inToleranceCount = 0;
                     }
+                    if ((inToleranceCount == IN_TOLERANCE_REQUIRED) && shoot) {
+                        launchState = LaunchState.LAUNCHING;
+                    }
+
+                    telemetry.addData("InTolerance Count: ", inToleranceCount);
 
                     // Telemetry for tuning
                     telemetry.addData("Flywheel", "Target %.0f RPM | Now %.0f RPM %s",
@@ -198,6 +200,8 @@ public class FeederLauncher {
                 }
                 break;
         }
+
+
     }
 
     // -------------------------------------------------

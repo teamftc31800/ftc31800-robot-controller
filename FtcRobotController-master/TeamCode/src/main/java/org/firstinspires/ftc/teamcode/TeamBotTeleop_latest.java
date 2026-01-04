@@ -7,6 +7,7 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 
+import com.qualcomm.robotcore.hardware.Servo;
 import org.firstinspires.ftc.teamcode.mechanisms.RPM_per_dist;
 import org.firstinspires.ftc.teamcode.mechanisms.AprilTagWebcam;
 import org.firstinspires.ftc.teamcode.mechanisms.RGBIndicatorLight;
@@ -90,6 +91,38 @@ public class TeamBotTeleop_latest extends OpMode {
 
     public static double remainingDistIn = targetDist;
 
+    // Standard servo (positional)
+    private Servo armServo = null;
+    private boolean hasArmServo = false;
+
+    // Servo positions
+    private static final double SERVO_HOME = 0.0;
+    private static final double SERVO_ACTIVE = 0.1;
+    private static final double SERVO_MIN = 0.0;
+    private static final double SERVO_MAX = 1.0;
+    private static final double SERVO_STEP = 0.1; // speed per loop
+
+    // --- Arm servo angle mapping (EDIT to match your mechanism) ---
+    private static final double ARM_MIN_DEG = 0.0;    // angle at SERVO_MIN
+    private static final double ARM_MAX_DEG = 300.0;  // angle at SERVO_MAX
+
+    // --- Arm servo bumper edge-detect (one step per press) ---
+    private boolean lastRightBumper = false;
+    private boolean lastLeftBumper  = false;
+
+    // -----------------------------
+// ARM AUTO-AIM (distance -> angle)
+// -----------------------------
+    private static final double ARM_DIST_NEAR_IN = 24.0;  // tune
+    private static final double ARM_DIST_FAR_IN  = 60.0;  // tune
+
+    private static final double ARM_DEG_NEAR = 60.0;      // tune
+    private static final double ARM_DEG_FAR  = 140.0;     // tune
+
+    private boolean armAutoAim = true;        // auto mode ON by default
+    private boolean lastArmToggle = false;    // edge detect for toggle
+
+
 //    private final FlyWheelTuner flywheeltuner = new FlyWheelTuner();
 
     // Launchers
@@ -135,7 +168,7 @@ public class TeamBotTeleop_latest extends OpMode {
             // We’ll switch to RUN_USING_ENCODER so .setVelocity() works in loop()
             flywheel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
             flywheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            flywheel.setDirection(DcMotor.Direction.REVERSE);
+            flywheel.setDirection(DcMotor.Direction.FORWARD);
         }
 
 
@@ -168,6 +201,16 @@ public class TeamBotTeleop_latest extends OpMode {
         } catch (Exception e) {
 //            telemetry.addLine("⚠️ Right feeder servo not found (name: 'feederServoRight').");
         }
+        // ARM SERVO
+        try {
+            armServo = hardwareMap.get(Servo.class, "armServo");
+            armServo.scaleRange(0.2,0.8);
+            armServo.setPosition(SERVO_HOME);   // start position
+            hasArmServo = true;
+        } catch (Exception e) {
+            telemetry.addLine("⚠️ Arm servo not found (name: 'armServo').");
+        }
+
 
         // AprilTag
         aprilTagWebcam.init(hardwareMap, telemetry);
@@ -187,6 +230,7 @@ public class TeamBotTeleop_latest extends OpMode {
         // RGB
         light.init(hardwareMap, telemetry, "indicator");
         light.blue();
+
 
     }
 
@@ -266,9 +310,35 @@ public class TeamBotTeleop_latest extends OpMode {
         if (hasIntake) {
             intake.setPower(intakePower);
         }
+        //----------------------------------
+        // 3. ARM SERVO CONTROL (ONE STEP PER PRESS)
+        //----------------------------------
+        if (hasArmServo) {
+            double servoPos = armServo.getPosition();
+
+            boolean rbNow = gamepad2.right_bumper;
+            boolean lbNow = gamepad2.left_bumper;
+
+            // Rising-edge detect: only step once when bumper is first pressed
+            if (rbNow && !lastRightBumper) {
+                servoPos += SERVO_STEP;
+            } else if (lbNow && !lastLeftBumper) {
+                servoPos -= SERVO_STEP;
+            }
+
+            // Save states for next loop
+            lastRightBumper = rbNow;
+            lastLeftBumper  = lbNow;
+
+            // Clamp and apply
+            servoPos = Math.max(SERVO_MIN, Math.min(SERVO_MAX, servoPos));
+            armServo.setPosition(servoPos);
+        }
+
+
 
         //----------------------------------
-        // 3. DUAL FEEDER SERVO CONTROL (D-PAD)
+        // 4. DUAL FEEDER SERVO CONTROL (D-PAD)
         //----------------------------------
         // Left servo: D-pad LEFT (forward)
         // Right servo: D-pad RIGHT (forward)
@@ -290,7 +360,7 @@ public class TeamBotTeleop_latest extends OpMode {
         }
 
         //----------------------------------
-        // 4. FLYWHEEL + FEEDER MOTOR SEQUENCE
+        // 5. FLYWHEEL + FEEDER MOTOR SEQUENCE
         //----------------------------------
 
 //        flywheeltuner.update();
@@ -312,18 +382,18 @@ public class TeamBotTeleop_latest extends OpMode {
                 boolean dpadUpNow   = gamepad2.dpad_up;
                 boolean dpadDownNow = gamepad2.dpad_down;
 
-//                if (!dpadPressed && (dpadUpNow || dpadDownNow)) {
-//                    if (dpadUpNow) {
-//                        FLYWHEEL_TARGET_RPM += 25;
-//                    } else if (dpadDownNow) {
-//                        FLYWHEEL_TARGET_RPM -= 25;
-//                    }
-//                    dpadPressed = true;   // lock until D-pad released
-//                }
-//
-//                if (!dpadUpNow && !dpadDownNow) {
-//                    dpadPressed = false;  // ready for next press
-//                }
+                if (!dpadPressed && (dpadUpNow || dpadDownNow)) {
+                    if (dpadUpNow) {
+                        FLYWHEEL_TARGET_RPM += 25;
+                    } else if (dpadDownNow) {
+                        FLYWHEEL_TARGET_RPM -= 25;
+                    }
+                    dpadPressed = true;   // lock until D-pad released
+                }
+
+                if (!dpadUpNow && !dpadDownNow) {
+                    dpadPressed = false;  // ready for next press
+                }
 
                 // ... keep the rest of your flywheel code unchanged ...
 
@@ -416,6 +486,16 @@ public class TeamBotTeleop_latest extends OpMode {
             telemetry.addData("flywheelVel(RPM est)", "%.0f", currentRPM);
         }
         reportHardwareStatus();
+// ----------------------------------
+// ARM SERVO TELEMETRY
+// ----------------------------------
+        if (hasArmServo) {
+            double pos = armServo.getPosition();      // 0.0 .. 1.0
+            double deg = servoPosToDeg(pos);          // mapped degrees
+            telemetry.addData("Arm Servo", "pos=%.3f  (~%.1f deg)", pos, deg);
+        } else {
+            telemetry.addData("Arm Servo", "MISSING");
+        }
 
         telemetry.update();
     }
@@ -467,6 +547,15 @@ public class TeamBotTeleop_latest extends OpMode {
         double ticksPerMin = ticksPerSec * 60.0;
         return ticksPerMin / ticksPerRev;
     }
+    // -------------------------------------------------
+// Helper: convert servo position (0–1) to degrees
+// -------------------------------------------------
+    private double servoPosToDeg(double pos) {
+        pos = Math.max(SERVO_MIN, Math.min(SERVO_MAX, pos));
+        double t = (pos - SERVO_MIN) / (SERVO_MAX - SERVO_MIN);
+        return ARM_MIN_DEG + t * (ARM_MAX_DEG - ARM_MIN_DEG);
+    }
+
 
     @Override
     public void start() {
