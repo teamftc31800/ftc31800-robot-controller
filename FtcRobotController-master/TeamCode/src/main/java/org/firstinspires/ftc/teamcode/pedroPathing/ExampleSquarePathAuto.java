@@ -8,9 +8,11 @@ import com.pedropathing.paths.Path;
 import com.pedropathing.paths.PathChain;
 import com.pedropathing.util.Timer;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 
 @Autonomous(name = "ExampleSquarePath Auto", group = "Examples")
+@Disabled
 public class ExampleSquarePathAuto extends OpMode {
 
     private Follower follower;

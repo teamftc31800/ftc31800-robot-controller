@@ -6,9 +6,11 @@ import com.pedropathing.geometry.Pose;
 import com.pedropathing.paths.Path;
 import com.pedropathing.paths.PathChain;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 
 @Autonomous(name = "Callback Example Auto", group = "Examples")
+@Disabled
 public class CallbackExampleAuto extends OpMode {
     private Follower follower;
     private PathChain driveAndDoAction;

@@ -3,6 +3,7 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
@@ -16,6 +17,7 @@ import org.firstinspires.ftc.teamcode.mechanisms.FeederLauncher;
 
 
 @Autonomous(name="RedTeamBotAutoSimple", group="Drive")
+@Disabled
 public class RedTeamBotAutoSimple extends OpMode {
 
     // Drivetrain motors (312 rpm goBILDA)

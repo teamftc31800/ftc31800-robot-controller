@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.hardware.CRServo;
@@ -13,6 +14,7 @@ import org.firstinspires.ftc.teamcode.mechanisms.RGBIndicatorLight;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 
 @TeleOp(name="TeamBotTeleop", group="Drive")
+@Disabled
 public class TeamBotTeleop extends OpMode {
 
     // -----------------------------

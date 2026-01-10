@@ -20,6 +20,10 @@ public class RedTeamBotAutoNearShort extends OpMode {
     private Follower follower;
     private ElapsedTime pathTimer, actionTimer, opmodeTimer, intakeTimer;
 
+    private ElapsedTime shootDelayTimer;
+    
+    final double SHOOT_DELAY_MILLISECONDS = 2000;
+
     private DcMotor intake = null;
 
     private boolean hasIntake = false;
@@ -43,12 +47,18 @@ public class RedTeamBotAutoNearShort extends OpMode {
     private enum SHOOTSTATE {
 
         SHOOT_1,
-       SHOOT_1_UPDATE,
+        SHOOT_1_LEFT_UPDATE,
+
+        SHOOT_1_DELAY,
+        SHOOT_1_RIGHT_UPDATE,
 
         INTAKE,
 
         SHOOT_2,
-        SHOOT_2_UPDATE,
+        SHOOT_2_LEFT_UPDATE,
+        SHOOT_2_DELAY,
+        SHOOT_2_RIGHT_UPDATE,
+
         SHOOT_END
     }
 
@@ -112,12 +122,12 @@ public class RedTeamBotAutoNearShort extends OpMode {
                     /* Shoot */
                     actionTimer.reset();
                     setPathState(PATHSTATE.SHOOT_UPDATE);
+                    shootstate = SHOOTSTATE.SHOOT_1;
 
                 }
                 break;
             case SHOOT_UPDATE:
                 shootUpdate();
-
                 break;
 
             case SCORE_TO_RETURN:
@@ -165,41 +175,89 @@ public class RedTeamBotAutoNearShort extends OpMode {
         rightFeederLauncher.launch(2200,0,true,true);
     }
 
+    public void shootLeftArtifacts() {
+        leftFeederLauncher.launch(2200,0,true, true);
+    }
+
+    public void shootRightArtifacts() {
+        rightFeederLauncher.launch(2200,0,true,true);
+    }
+
+
 
     public void shootUpdate() {
         switch (shootstate) {
             case SHOOT_1:
-                shootArtifacts();
-                shootstate = SHOOTSTATE.SHOOT_1_UPDATE;
-
+                // Start left shoot first
+                shootLeftArtifacts();
+                shootDelayTimer = new ElapsedTime(); // initialize timer for delay
+                shootstate = SHOOTSTATE.SHOOT_1_LEFT_UPDATE;
                 break;
 
+            case SHOOT_1_LEFT_UPDATE:
+                // Wait until left has launched
+                if (leftFeederLauncher.getStatus() == FeederLauncher.LaunchState.LAUNCHED) {
+                    shootDelayTimer.reset(); // start counting for right shoot delay
+                    shootstate = SHOOTSTATE.SHOOT_1_DELAY;
+                }
+                break;
 
-            case SHOOT_1_UPDATE:
+            case SHOOT_1_DELAY:
+                if (shootDelayTimer.milliseconds() >= SHOOT_DELAY_MILLISECONDS) {
+                    shootRightArtifacts();
+                    shootDelayTimer.reset();
+
+                    shootstate = SHOOTSTATE.SHOOT_1_RIGHT_UPDATE;
+                }
+                break;
+
+            case SHOOT_1_RIGHT_UPDATE:
+                // Wait until delay has passed
+
+
                 if (rightFeederLauncher.getStatus() == FeederLauncher.LaunchState.LAUNCHED) {
                     shootstate = SHOOTSTATE.INTAKE;
+                    intakeTimer.reset();
                 }
                 break;
 
             case INTAKE:
-                if (hasIntake) {
-                    intake.setPower(-1.0);
-                    intakeTimer.reset();
+                if (intakeTimer.milliseconds() < 1000) {
+                    if (hasIntake) {
+                        intake.setPower(-1.0);
+                    }
+                } else {
+                    if (hasIntake) {
+                        intake.setPower(0.0);
+                    }
+                    shootstate = SHOOTSTATE.SHOOT_2;
                 }
-                shootstate = SHOOTSTATE.SHOOT_2;
                 break;
 
             case SHOOT_2:
+                shootLeftArtifacts();
+                shootDelayTimer.reset();
+                shootstate = SHOOTSTATE.SHOOT_2_LEFT_UPDATE;
+                break;
 
-                if (intakeTimer.milliseconds() >= 600) {
-                    intake.setPower(0.0);
-                    shootArtifacts();
-                    shootstate = SHOOTSTATE.SHOOT_2_UPDATE;
+            case SHOOT_2_LEFT_UPDATE:
+                if (leftFeederLauncher.getStatus() == FeederLauncher.LaunchState.LAUNCHED) {
+                    shootDelayTimer.reset();
+                    shootstate = SHOOTSTATE.SHOOT_2_DELAY;
+                }
+                break;
+
+            case SHOOT_2_DELAY:
+                if (shootDelayTimer.milliseconds() >= SHOOT_DELAY_MILLISECONDS) {
+                    shootRightArtifacts();
+                    shootDelayTimer.reset();
+
+                    shootstate = SHOOTSTATE.SHOOT_2_RIGHT_UPDATE;
                 }
 
                 break;
+            case SHOOT_2_RIGHT_UPDATE:
 
-            case SHOOT_2_UPDATE:
                 if (rightFeederLauncher.getStatus() == FeederLauncher.LaunchState.LAUNCHED) {
                     shootstate = SHOOTSTATE.SHOOT_END;
                 }
@@ -210,18 +268,19 @@ public class RedTeamBotAutoNearShort extends OpMode {
                 break;
         }
 
-        //launch left and right. Start right just before releasing the left feeder
+        // Update launchers
         leftFeederLauncher.update();
         rightFeederLauncher.update();
 
-        //recovery based on timeout
-        if (actionTimer.milliseconds() >= 13000) {
+        // Recovery timeout
+        if (actionTimer.milliseconds() >= 23000) {
             setPathState(PATHSTATE.SCORE_TO_RETURN);
+            shootstate = SHOOTSTATE.SHOOT_END;
         }
 
         telemetry.addData("Shoot State: ", shootstate);
-
     }
+
 
 
 
@@ -231,7 +290,10 @@ public class RedTeamBotAutoNearShort extends OpMode {
 
         // These loop the movements of the robot, these must be called continuously in order to work
         follower.update();
-        autonomousPathUpdate();
+        if (opmodeTimer.milliseconds() > 1500) {
+            autonomousPathUpdate();
+        }
+
 
         telemetry.addData("LeftFeederLauncher state",leftFeederLauncher.getStatus());
         telemetry.addData("RightFeederLauncher state",rightFeederLauncher.getStatus());

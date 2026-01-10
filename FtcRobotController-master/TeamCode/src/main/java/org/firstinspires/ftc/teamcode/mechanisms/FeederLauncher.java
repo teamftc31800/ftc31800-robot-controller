@@ -17,7 +17,7 @@ public class FeederLauncher {
 
     private DcMotorEx flywheel = null; // Shooter flywheel motor
 
-    private final double FLYWHEEL_DEFAULT_VELOCITY = 2500; // Default target RPM for flywheel
+    private final double FLYWHEEL_DEFAULT_VELOCITY = 2200; // Default target RPM for flywheel
     private double targetFlywheelRPM = FLYWHEEL_DEFAULT_VELOCITY; // Current commanded flywheel RPM
 
     private boolean hasFlywheel = false; // Used to avoid null pointer if hardware missing
@@ -33,7 +33,7 @@ public class FeederLauncher {
 
     ElapsedTime feederTimer = new ElapsedTime(); // Timer used to control feeder firing window
 
-    final double FEED_TIME_MILLI_SECONDS = 1500; // Time in milliseconds feeder activates per shot
+    final double FEED_TIME_MILLI_SECONDS = 1000; // Time in milliseconds feeder activates per shot
     final double STOP_SPEED = 0.0;         // Command to stop the CR servo
     final double FULL_SPEED = 1.0;         // Max CR servo power
 
@@ -95,7 +95,7 @@ public class FeederLauncher {
             flywheel.setDirection(DcMotor.Direction.FORWARD);               // Typical shooter direction
         }
 
-        LaunchState launchState = LaunchState.IDLE;
+        launchState = LaunchState.IDLE;
 
     }
 
@@ -103,7 +103,7 @@ public class FeederLauncher {
     public void launch(double targetRPM, double deltaRPM, boolean override,boolean feed) {
         double targetTPS = 0;
         if (!shoot && feed) { // Start sequence only if not already shooting
-
+            inToleranceCount = 0;
             // If overriding, use the direct requested RPM
 
             // If overriding, apply deltaRPM ONCE
