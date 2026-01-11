@@ -53,6 +53,9 @@ public class TeamBotTeleop_latest extends OpMode {
     private boolean hasFeederServoRight = false;
 
     private boolean flywheelActive = false;
+    private boolean useManualRPM = false;   // true when X-preset (3150 RPM) is active
+    private String manualPresetLabel = "";     // which preset is active (RT/LT)
+
     private boolean lastButtonState = false;
 
     // Convenience: did each motor initialize?
@@ -73,7 +76,7 @@ public class TeamBotTeleop_latest extends OpMode {
     private static final double FEEDER_RPM = 400;
 
     // Targets
-    private static double FLYWHEEL_TARGET_RPM = 2700.;
+    private static double FLYWHEEL_TARGET_RPM = 2400.;
     private static final double FLYWHEEL_TOLERANCE   = 200.0;
 
     // Debounce: require N consecutive "in-tolerance" reads before feeding
@@ -111,8 +114,8 @@ public class TeamBotTeleop_latest extends OpMode {
     private boolean lastLeftBumper  = false;
 
     // -----------------------------
-// ARM AUTO-AIM (distance -> angle)
-// -----------------------------
+    // ARM AUTO-AIM (distance -> angle)
+    // -----------------------------
     private static final double ARM_DIST_NEAR_IN = 24.0;  // tune
     private static final double ARM_DIST_FAR_IN  = 60.0;  // tune
 
@@ -121,7 +124,6 @@ public class TeamBotTeleop_latest extends OpMode {
 
     private boolean armAutoAim = true;        // auto mode ON by default
     private boolean lastArmToggle = false;    // edge detect for toggle
-
 
 //    private final FlyWheelTuner flywheeltuner = new FlyWheelTuner();
 
@@ -154,6 +156,10 @@ public class TeamBotTeleop_latest extends OpMode {
         if (hasFrontRight) frontRight.setDirection(DcMotor.Direction.FORWARD);
         if (hasBackRight)  backRight.setDirection(DcMotor.Direction.FORWARD);
 
+        if (hasFrontLeft)  frontLeft.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        if (hasBackLeft)  backLeft.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        if (hasFrontRight)  frontRight.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        if (hasBackRight)  backRight.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         // Brake
         if (hasFrontLeft)  frontLeft.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         if (hasFrontRight) frontRight.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
@@ -260,7 +266,7 @@ public class TeamBotTeleop_latest extends OpMode {
         // In-range if either goal tag is in the ~1ft zone
         boolean inShootRange =
                 aprilTagWebcam.IsRobotinZone(24) ||
-                aprilTagWebcam.IsRobotinZone(20);
+                        aprilTagWebcam.IsRobotinZone(20);
 
         // Debounce so light doesn't flicker
         if (inShootRange) shootInRangeCount++;
@@ -334,6 +340,49 @@ public class TeamBotTeleop_latest extends OpMode {
             servoPos = Math.max(SERVO_MIN, Math.min(SERVO_MAX, servoPos));
             armServo.setPosition(servoPos);
         }
+        // ----------------------------------
+        // 3B. PRESET: gamepad2 X -> 120° + 3150 RPM
+        // ----------------------------------
+        if (gamepad2.x && hasArmServo && hasFlywheel) {
+            // Set arm to 120 degrees
+            double presetPos = degToServoPos(120.0);
+            armServo.setPosition(presetPos);
+
+            // Lock flywheel target to 3150 RPM
+            FLYWHEEL_TARGET_RPM = 3150.0;
+            useManualRPM = true;
+        }
+        // ----------------------------------
+// ----------------------------------
+// 3B. PRESETS using RT & LT triggers
+// RT  -> 120° and 2400 RPM
+// LT  -> 180° and 2200 RPM
+// ----------------------------------
+        if (hasArmServo && hasFlywheel) {
+
+            // RT preset
+            if (gamepad2.right_trigger > 0.5) {
+                double pos120 = degToServoPos(150.0);
+                armServo.setPosition(pos120);
+                //armServo.setPosition();
+
+                FLYWHEEL_TARGET_RPM = 2400.0;
+                useManualRPM = true;
+                manualPresetLabel = "RT: 120° / 2400 RPM";
+            }
+
+            // LT preset
+            if (gamepad2.left_trigger > 0.5) {
+                double pos180 = degToServoPos(180.0);
+                armServo.setPosition(pos180);
+
+                FLYWHEEL_TARGET_RPM = 2200.0;
+                useManualRPM = true;
+                manualPresetLabel = "LT: 180° / 2200 RPM";
+            }
+        }
+
+
 
 
 
@@ -365,35 +414,36 @@ public class TeamBotTeleop_latest extends OpMode {
 
 //        flywheeltuner.update();
 
-        boolean toggleButton = gamepad2.triangle;    // use triangle to toggle sequence
-        boolean currentButtonState = toggleButton;
-
-        // Rising edge detect
-        if (currentButtonState && !lastButtonState) {
-            flywheelActive = !flywheelActive; // toggle state
-        }
-
-        // Save for next loop
-        lastButtonState = currentButtonState;
+//        boolean toggleButton = gamepad2.triangle;    // use triangle to toggle sequence
+//        boolean currentButtonState = toggleButton;
+//
+//        // Rising edge detect
+//        if (currentButtonState && !lastButtonState) {
+//            flywheelActive = !flywheelActive; // toggle state
+//        }
+//
+//        // Save for next loop
+//        lastButtonState = currentButtonState;
 
         if (hasFlywheel) {
-            if (flywheelActive) {
-                // edge-detect: run once when D-pad is first pressed
-                boolean dpadUpNow   = gamepad2.dpad_up;
-                boolean dpadDownNow = gamepad2.dpad_down;
-
-                if (!dpadPressed && (dpadUpNow || dpadDownNow)) {
-                    if (dpadUpNow) {
-                        FLYWHEEL_TARGET_RPM += 25;
-                    } else if (dpadDownNow) {
-                        FLYWHEEL_TARGET_RPM -= 25;
-                    }
-                    dpadPressed = true;   // lock until D-pad released
-                }
-
-                if (!dpadUpNow && !dpadDownNow) {
-                    dpadPressed = false;  // ready for next press
-                }
+//            if (flywheelActive) {
+//                // edge-detect: run once when D-pad is first pressed
+//                boolean dpadUpNow   = gamepad2.dpad_up;
+//                boolean dpadDownNow = gamepad2.dpad_down;
+//
+////
+//                if (!dpadPressed && (dpadUpNow || dpadDownNow)) {
+//                    if (dpadUpNow) {
+//                        FLYWHEEL_TARGET_RPM += 25;
+//                    } else if (dpadDownNow) {
+//                        FLYWHEEL_TARGET_RPM -= 25;
+//                    }
+//                    dpadPressed = true;   // lock until D-pad released
+//                }
+//
+//                if (!dpadUpNow && !dpadDownNow) {
+//                    dpadPressed = false;  // ready for next press
+//                }
 
                 // ... keep the rest of your flywheel code unchanged ...
 
@@ -406,7 +456,12 @@ public class TeamBotTeleop_latest extends OpMode {
 //                    remainingDistIn = targetDist;
 //                }
 
-//                FLYWHEEL_TARGET_RPM = distToRPM.getFlywheelRPMForDistance(remainingDistIn);
+                // If not using manual preset, compute RPM from distance
+//                if (!useManualRPM) {
+//                    FLYWHEEL_TARGET_RPM = distToRPM.getFlywheelRPMForDistance(remainingDistIn);
+//                }
+
+
                 // Spin up flywheel to target velocity
                 double targetTPS = rpmToTicksPerSec(FLYWHEEL_TARGET_RPM, FLYWHEEL_TPR);
                 flywheel.setVelocity(targetTPS);
@@ -439,17 +494,17 @@ public class TeamBotTeleop_latest extends OpMode {
 //                        ? (inToleranceCount >= IN_TOLERANCE_REQUIRED ? "FEEDING" : "WAITING")
 //                        : "N/A"));
                 telemetry.addData("Largest Overshoot", largest_overshoot);
-            } else {
-                // Toggle off: stop both
-                flywheel.setPower(0.0);
-                inToleranceCount = 0;
-
-                if (hasFeederMotor) {
-                    feederMotor.setPower(0.0);
-                }
-//                telemetry.addData("Flywheel State", "Stopped");
-//                telemetry.addData("FeederMotor", hasFeederMotor ? "Stopped" : "N/A");
-            }
+//            } else {
+//                // Toggle off: stop both
+//                flywheel.setPower(0.0);
+//                inToleranceCount = 0;
+//
+//                if (hasFeederMotor) {
+//                    feederMotor.setPower(0.0);
+//                }
+////                telemetry.addData("Flywheel State", "Stopped");
+////                telemetry.addData("FeederMotor", hasFeederMotor ? "Stopped" : "N/A");
+//            }
         }
 
         if (hasFlywheel) {
@@ -460,6 +515,18 @@ public class TeamBotTeleop_latest extends OpMode {
             double ticksPerRev = 28.0;
             double currentRPM = ticksPerSecToRPM(currentVel, ticksPerRev);
             telemetry.addData("flywheelVel(RPM est)", "%.0f", currentRPM);
+            if (useManualRPM) {
+                telemetry.addData("Flywheel Target", "3150 RPM (X-Preset)");
+            } else {
+                telemetry.addData("Flywheel Target", "Current: %.0f RPM", FLYWHEEL_TARGET_RPM);
+            }
+
+            if (useManualRPM && Math.abs(FLYWHEEL_TARGET_RPM - 3150.0) < 5.0) {
+                telemetry.addData("Flywheel Target", "3150 RPM  (X-Preset)");
+            } else {
+                telemetry.addData("Flywheel Target", "%.0f RPM", FLYWHEEL_TARGET_RPM);
+            }
+
         }
 
         //----------------------------------
@@ -477,25 +544,41 @@ public class TeamBotTeleop_latest extends OpMode {
 //        telemetry.addData("Flywheel Active", flywheelActive);
 
         if (hasFlywheel) {
-//            telemetry.addData("triangle", "toggle flywheel+feeder sequence");
             double currentVel = flywheel.getVelocity(); // ticks/sec
-//            telemetry.addData("flywheelVel(ticks/s)", "%.1f", currentVel);
-
             double ticksPerRev = 28.0;
             double currentRPM = ticksPerSecToRPM(currentVel, ticksPerRev);
-            telemetry.addData("flywheelVel(RPM est)", "%.0f", currentRPM);
+
+            // Always show actual RPM
+            telemetry.addData("Flywheel RPM (actual)", "%.0f", currentRPM);
+
+            // Show target + preset info
+            if (useManualRPM && !manualPresetLabel.isEmpty()) {
+                telemetry.addData("Flywheel Target", "%.0f RPM (Preset)", FLYWHEEL_TARGET_RPM);
+                telemetry.addData("Preset", manualPresetLabel);
+            } else {
+                telemetry.addData("Flywheel Target", "%.0f RPM (Auto)", FLYWHEEL_TARGET_RPM);
+            }
         }
+
         reportHardwareStatus();
+
 // ----------------------------------
 // ARM SERVO TELEMETRY
 // ----------------------------------
         if (hasArmServo) {
             double pos = armServo.getPosition();      // 0.0 .. 1.0
             double deg = servoPosToDeg(pos);          // mapped degrees
-            telemetry.addData("Arm Servo", "pos=%.3f  (~%.1f deg)", pos, deg);
+
+            if (useManualRPM && !manualPresetLabel.isEmpty()) {
+                telemetry.addData("Arm Angle", "%.1f° (Preset)", deg);
+            } else {
+                telemetry.addData("Arm Angle", "Current: %.1f°", deg);
+            }
         } else {
             telemetry.addData("Arm Servo", "MISSING");
         }
+
+
 
         telemetry.update();
     }
@@ -556,11 +639,23 @@ public class TeamBotTeleop_latest extends OpMode {
         return ARM_MIN_DEG + t * (ARM_MAX_DEG - ARM_MIN_DEG);
     }
 
+    // -------------------------------------------------
+// Helper: convert degrees to servo position (0–1)
+// -------------------------------------------------
+    private double degToServoPos(double degrees) {
+        // normalize 0..1 in angle space
+        double t = (degrees - ARM_MIN_DEG) / (ARM_MAX_DEG - ARM_MIN_DEG);
+        t = Math.max(0.0, Math.min(1.0, t));   // clamp
+        // map into [SERVO_MIN, SERVO_MAX]
+        return SERVO_MIN + t * (SERVO_MAX - SERVO_MIN);
+    }
+
+
 
     @Override
     public void start() {
         // Start flywheels on launchers (not ready to shoot)
-//        leftFeederLauncher.launch(0, 0, false, false);
-//        rightFeederLauncher.launch(0, 0, false, false);
+        double targetTPS = rpmToTicksPerSec(FLYWHEEL_TARGET_RPM, FLYWHEEL_TPR);
+        flywheel.setVelocity(targetTPS);
     }
 }
